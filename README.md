@@ -1,2 +1,2 @@
 # romview
-ROM image viewer
+ROM image viewer for HSP3
