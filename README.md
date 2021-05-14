@@ -1,2 +1,2 @@
-# r_e_p_o
-readme
+# romview
+ROM image viewer
