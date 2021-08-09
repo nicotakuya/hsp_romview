@@ -300,7 +300,7 @@ if (mapper!=2){
 	ofsx = 320
 	gosub *dump
 
-//	gosub *change8bank	//change 8Bank
+	gosub *change8bank	//change 8Bank
 }
 pos 320,8
 dat = prgsize
