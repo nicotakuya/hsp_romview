@@ -1,4 +1,4 @@
-// ROM viewer(nes/gb/smc/ws/wsc/p6/cas)
+// ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas)
 // for HSP 3.x(windows)
 // by takuya matsubara
 
@@ -7,9 +7,10 @@
 // https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 // https://snesdev.mesen.ca/wiki/index.php?title=Internal_ROM_Header
 // http://daifukkat.su/docs/wsman/
+// https://github.com/Stephane-D/SGDK/blob/master/src/boot/rom_head.c
 
 screen 0,1200,680
-title "ROM viewer(nes/gb/smc/ws/wsc/p6/cas)"
+title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas)"
 
 KILO = 1024
 MEGA = 1024*1024
@@ -52,6 +53,10 @@ if (extension == ".NES") {
 	gosub *nesfile
 	return
 }
+if (extension == ".BIN") {
+	gosub *mdfile
+	return
+}
 if (extension == ".GB") {
 	gosub *gbfile
 	return
@@ -83,7 +88,84 @@ while (ptr < strlen(filename))
 	ptr++
 wend
 return
+//-----
+*mdfile
+print "Type:MegaDrive"
 
+ptr = $100
+datcnt = 16
+gosub *readstring
+print "Console Name:\""+string+"\""
+
+datcnt = 16
+gosub *readstring
+print "Copyright Info.:\""+string+"\""
+
+datcnt = 48
+gosub *readstring
+print "Domestic Name:"
+print "\""+string+"\""
+
+datcnt = 48
+gosub *readstring
+print "Overseas Name:"
+print "\""+string+"\""
+
+datcnt = 14
+gosub *readstring
+print "Serial:\""+string+"\""
+
+gosub *readword
+print "Checksum:"+strf("%04X",dat)
+
+datcnt = 16
+gosub *readstring
+print "I/O Support:\""+string+"\""
+
+gosub *readlong2
+print "ROM Start Address:"+strf("%08X",dat)
+
+gosub *readlong2
+print "ROM End Address:"+strf("%08X",dat)
+
+gosub *readlong2
+print "Start of Backup RAM:"+strf("%08X",dat)
+
+gosub *readlong2
+print "End of Backup RAM:"+strf("%08X",dat)
+
+datcnt = 2
+gosub *readstring
+print "SRAM sig:\""+string+"\""
+
+gosub *readword2
+print "SRAM type:"+strf("%04X",dat)
+
+gosub *readlong2
+print "SRAM start:"+strf("%08X",dat)
+
+gosub *readlong2
+print "SRAM end:"+strf("%08X",dat)
+
+datcnt = 12
+gosub *readstring
+print "Modem Support:\""+string+"\""
+
+datcnt = 40
+gosub *readstring
+print "Memo:"
+print "\""+string+"\""
+
+datcnt = 16
+gosub *readstring
+print "Country Support:\""+string+"\""
+
+ptr=0
+dumpsize = totalsize
+ofsx = 320+160
+gosub *dump
+
+return
 //-----
 *p6file
 gosub *setp6chr
@@ -700,7 +782,25 @@ if(megabit==0){
 	string += str(megabit)+"Mbit)"
 }
 return
-//-------
+//-------big endian
+*readlong2
+dat = (peek(fbuf,ptr) << 24)
+ptr++
+dat += (peek(fbuf,ptr) << 16)
+ptr++
+dat += (peek(fbuf,ptr) << 8)
+ptr++
+dat += (peek(fbuf,ptr) << 0)
+ptr++
+return
+//-------big endian
+*readword2
+dat = (peek(fbuf,ptr) << 8)
+ptr++
+dat += peek(fbuf,ptr)
+ptr++
+return
+//-------little endian
 *readlong
 dat = peek(fbuf,ptr)
 ptr++
@@ -711,7 +811,7 @@ ptr++
 dat += (peek(fbuf,ptr) << 24)
 ptr++
 return
-//-------
+//-------little endian
 *readword
 dat = peek(fbuf,ptr)
 ptr++
