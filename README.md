@@ -3,17 +3,25 @@
 ## overview
 ROM image viewer for HSP3.
 
-nes/smc/gb/ws/p6/cas file support.
-
 ## 特徴
 
-・マッパーやミラーリング設定の確認(nes)
+・ヘッダー情報の確認。
 
-・バンク数の変換(nes)
+・サムチェック。
 
-・HiROM/LoROMの確認(smc)
+## 対応する拡張子
 
-・内部のファイル名の確認(p6/cas)
+nes : famicom
+
+smc : super famicom
+
+gb : gameboy
+
+ws/wsc : wonderswan
+
+p6/cas : PC-6001 tape image
+
+bin : megadrive
 
 ## screenshot
 
@@ -30,3 +38,5 @@ https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 https://snesdev.mesen.ca/wiki/index.php?title=Internal_ROM_Header
 
 http://daifukkat.su/docs/wsman/
+
+https://github.com/Stephane-D/SGDK/blob/master/src/boot/rom_head.c
