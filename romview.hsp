@@ -1,65 +1,145 @@
-// nes/gb/smc/ws rom viewer
+// ROM viewer(nes/gb/smc/ws/wsc/p6/cas)
 // for HSP 3.x(windows)
 // by takuya matsubara
 
-//参考資料
+//reference
 // https://wiki.nesdev.com/w/index.php/INES
 // https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
 // https://snesdev.mesen.ca/wiki/index.php?title=Internal_ROM_Header
 // http://daifukkat.su/docs/wsman/
 
-screen 0,1200,750
+screen 0,1200,680
+title "ROM viewer(nes/gb/smc/ws/wsc/p6/cas)"
 
 KILO = 1024
 MEGA = 1024*1024
 sdim fbuf,2*MEGA+512
 
-title "nes/gb/smc ROM viewer"
+pos 8,8
+objsize 150,25
+button gosub "OPEN ROM",*openfile
+
+gosub *openfile
+stop
+
+// open ROM file
+*openfile
+color 255,255,255
+boxf 0,0,1200,680
+pos 0,32
+color 0,0,0
+
 dialog "*",16,"file"
 if(stat != 1){
-  	end
+  	return
 }
 filename = refstr
-bload filename,fbuf	// ファイル読み込み
-totalsize = strsize	// ファイルサイズ
+bload filename,fbuf	// binary load
+totalsize = strsize	// file size
 
-//パスを除去
+// delete path
 ptr = strlen(filename)
 repeat
 	if(ptr==0):break
-	if(peek(filename,ptr-1)==$5c):break 	//
+	if(peek(filename,ptr-1)==$5c):break 	// slash
 	ptr--
 loop
 
-cls
-pos 8,8
 print "Filename:"+strmid(filename,ptr,255)
 print "Filesize:"+str(totalsize)+" BYTES"
-if(instr(filename,0,".nes") > 0) or (instr(filename,0,".NES") > 0){
+gosub *get_extension
+if (extension == ".NES") {
 	gosub *nesfile
-	end
+	return
 }
-if(instr(filename,0,".gb") > 0) or (instr(filename,0,".GB") > 0){
+if (extension == ".GB") {
 	gosub *gbfile
-	end
+	return
 }
-if(instr(filename,0,".smc") > 0) or (instr(filename,0,".SMC") > 0){
+if (extension == ".SMC"){
 	gosub *smcfile
-	end
+	return
 }
-if(instr(filename,0,".ws") > 0) or (instr(filename,0,".WS") > 0){
+if (extension == ".WS") or (extension == ".WSC"){
 	gosub *wsfile
-	end
+	return
 }
-if(instr(filename,0,".wsc") > 0) or (instr(filename,0,".WSC") > 0){
-	gosub *wsfile
-	end
+if (extension == ".P6") or (extension == ".CAS"){
+	gosub *p6file
+	return
 }
 print "Unknown file"
-stop
-end
+return
+
+//-----
+*get_extension
+extension = ""
+ptr = instr(filename,0,".")
+if (ptr < 0) :return
+while (ptr < strlen(filename))
+	dat = peek(filename,ptr)
+	if (dat >= $61) and (dat <= $7a):dat -= $20 // upper case
+	extension += strf("%c",dat)
+	ptr++
+wend
+return
+
+//-----
+*p6file
+gosub *setp6chr
+print "Type:PC-6001 cassette tape"
+ptr=0
+repeat
+	if( ptr >= totalsize ):break
+	// search "D3" x10
+	i=0
+	repeat
+		if( ptr >= totalsize ):break
+		gosub *readbyte
+		if(dat == $D3){
+			i++
+			if(i>=10):break
+		}else{
+			i=0
+		}
+	loop
+	if( ptr >= totalsize ):break
+	
+	string = ""
+	for i,0,6
+		gosub *readbyte
+		string += p6chrdata(dat)
+	next
+	print
+	print "Tape Filename:\""+string+"\""
+	ptr_backup = ptr
+
+	// search "00" x10
+	i=0
+	repeat
+		if( ptr >= totalsize ):break
+		gosub *readbyte
+		if(dat == $00){
+			i++
+			if(i>=10):break
+		}else{
+			i=0
+		}
+	loop
+
+	print "Data size:"+str((ptr-10) - ptr_backup)+" Bytes"
+loop
+
+ptr=0
+dumpsize = totalsize
+ofsx = 320+48
+gosub *dump
+
+return
+
 //-----
 *smcfile
+print "Type:Super famicom"
 if (totalsize-(int(totalsize/KILO)*KILO))>0 {
 	headersize = 512
 }else{
@@ -152,7 +232,6 @@ print "Checksum:"+strf("%04X",dat)
 ptr = 0+headersize
 dumpsize = prgsize
 ofsx = 440
-ofsy = 32
 gosub *dump
 
 pos 320+64,8
@@ -173,12 +252,11 @@ suml = (sum & $ff)
 sumhrev = sumh ^ $ff
 sumlrev = suml ^ $ff
 */
-	
-stop
 return
 
 //-----
 *nesfile
+print "Type:Famicom/Nes"
 headersize = 16
 
 // $4E $45 $53 $1A
@@ -210,57 +288,19 @@ if (mapper!=2){
 	ptr = headersize
 	dumpsize = prgsize
 	ofsx = 320
-	ofsy = 32
 	gosub *dump
 
 	ptr = headersize+prgsize
 	dumpsize = chrsize
 	ofsx = 660
-	ofsy = 32
 	gosub *dump
-}else{
+}else{	// mapper2
 	ptr = headersize
 	dumpsize = prgsize
 	ofsx = 320
-	ofsy = 32
 	gosub *dump
 
-	lastbank = int(prgsize/(16*KILO))			// BANK数
-	totalbank = 8								// あるべきBANK数
-	if(lastbank < totalbank){
-		dialog "バンク数が足りないので最終バンクをコピーします",2
-		if(stat==6){
-			// 途中はFFを書き込み
-			for bank,lastbank,totalbank-1
-				for i,0,16*KILO
-					dat = $ff
-					poke fbuf,i+(bank*16*KILO)+headersize,dat
-				next
-			next
-			// 最終バンクだけコピー（本当はベクタだけでいい）
-			bank = totalbank-1	// コピー先バンク
-			for i,0,16*KILO
-				dat = peek(fbuf,i+((lastbank-1)*16*KILO)+headersize)
-				poke fbuf,i+(bank*16*KILO)+headersize,dat
-			next
-			prgsize = (16*totalbank*KILO)	// サイズ修正
-			poke fbuf,4,totalbank		//ヘッダ修正
-
-			dialog "nes",17,"file"
-			if(stat==1){
-				filename = refstr
-				if (instr(filename,0,".nes")<0)and(instr(filename,0,".NES")<0){
-					filename = filename+".nes"
-				}
-				bsave filename,fbuf,prgsize+headersize	//save file
-			}
-			ptr = headersize
-			dumpsize = prgsize
-			ofsx = 320
-			ofsy = 32
-			gosub *dump
-		}
-	}
+//	gosub *change8bank	//change 8Bank
 }
 pos 320,8
 dat = prgsize
@@ -273,10 +313,49 @@ if(chrsize){
 	gosub *byte2string
 	print "CHR-ROM size:"+string
 }
-stop
+return
+//----------Mapper2、8バンクに変換(nes)
+*change8bank
+lastbank = int(prgsize/(16*KILO))			// 現在のBANK数
+totalbank = 8								// あるべきBANK数
+
+if(lastbank >= totalbank):return
+	
+dialog str(totalbank)+"バンクに変換します",2
+if(stat!=6):return
+	
+// 途中はFFを書き込み
+for bank,lastbank,totalbank-1
+	for i,0,16*KILO
+		dat = $ff
+		poke fbuf,i+(bank*16*KILO)+headersize,dat
+	next
+next
+// 最終バンクだけコピー（本当はベクタだけでいい）
+bank = totalbank-1	// コピー先バンク
+for i,0,16*KILO
+	dat = peek(fbuf,i+((lastbank-1)*16*KILO)+headersize)
+	poke fbuf,i+(bank*16*KILO)+headersize,dat
+next
+prgsize = (16*totalbank*KILO)	// サイズ修正
+poke fbuf,4,totalbank		//ヘッダ修正
+
+ptr = headersize
+dumpsize = prgsize
+ofsx = 320
+gosub *dump
+
+dialog "nes",17,"file"
+if(stat==1){
+	filename = refstr
+	gosub *get_extension
+	if (extension != ".NES") : filename += ".nes"
+	bsave filename,fbuf,prgsize+headersize	//save file
+}
 return
 //----------
 *gbfile
+print "Type:Gameboy"
 dat = totalsize*8	
 gosub *bit2string
 print string
@@ -320,7 +399,7 @@ for i,0,($133-$104)+1
 next
 color 0,0,0
 
-//0134 Title(11文字)
+//0134 Title(11 character)
 datcnt = 11
 gosub *readstring
 print "Title:"+string
@@ -440,17 +519,35 @@ print "logo"
 ptr = 0
 dumpsize = totalsize
 ofsx = 320
-ofsy = 32
 gosub *dump
-stop
 return
 //--------------
 *wsfile
+print "Type:Wonderswan"
+ptr = totalsize -16
+gosub *readbyte	// 0xEA(jmpf)
+if(dat != 0xEA){
+	print "format error1"
+}
+
+gosub *readword	// label
+string = strf("%04X",dat)
+print "Start Label:0x"+string
+
+gosub *readword	// segment
+string = strf("%02X",dat)
+print "Start Segment:0x"+string
+
+gosub *readbyte	//must be zero
+if(dat != 0x00){
+	print "format error2"
+}
+
 ptr = totalsize -10
 	
 gosub *readbyte
-string = strf("%02X",dat)
-print "Publisher ID:0x"+string
+string = "0x"+strf("%02X",dat)
+print "Publisher ID:"+string
 
 gosub *readbyte
 if (dat & 1){
@@ -461,12 +558,12 @@ if (dat & 1){
 print "System:"+string
 
 gosub *readbyte
-string = strf("%02X",dat)
-print "Game ID:0x"+string
+string = "0x"+strf("%02X",dat)
+print "Game ID:"+string
 
 gosub *readbyte
-string = strf("%02X",dat)
-print "Game revision:0x"+sting
+string = "0x"+strf("%02X",dat)
+print "Game revision:"+sting
 
 gosub *readbyte
 if dat==0:string = "1Mbit (128KB)"
@@ -479,6 +576,7 @@ if dat==6:string = "32Mbit (4MB)"
 if dat==7:string = "48Mbit (6MB)"
 if dat==8:string = "64Mbit (8MB)"
 if dat==9:string = "128Mbit (16MB)"
+string = "0x"+strf("%02X",dat)+" = "+string
 print "ROM size:"+string
                 
 gosub *readbyte
@@ -491,10 +589,10 @@ if dat==5:string = "4Mbit SRAM (512KB)"
 if dat==$10:string = "1Kbit EEPROM"
 if dat==$20:string = "16Kbit EEPROM"
 if dat==$50:string = "8Kbit EEPROM"
-print "Save size/type:"+string
+string = "0x"+strf("%02X",dat)+" = "+string
+print "Save type:"+string
 
 gosub *readbyte
-print "Flags"
 if (dat & (1<<2)){
 	string="1 cycle"
 }else{
@@ -525,17 +623,63 @@ if (dat & 1){
 print "RTC present:"+string
 
 gosub *readword
-string = strf("%04X",dat)
-print "sum:"+string
+string = "0x"+strf("%04X",dat)
+print "Sum:"+string
+
+//checksum
+sum = 0
+for i,0,totalsize-2
+	sum = (sum + peek(fbuf,i)) & $ffff
+next
+if (sum != dat){
+	print " CheckSum Error"
+}
 
 ptr = 0
 dumpsize = totalsize
 ofsx = 320+48
-ofsy = 32
 gosub *dump
-stop
-return
 
+gosub *change256kb	//256KBに変換
+
+return
+//--------------256KBに変換(ws)
+*change256kb
+if(totalsize >= 128*2*KILO):return
+dialog "サイズが256KB未満のため、256KBに変換します",2
+if(stat!=6):return
+	
+totalsize = 128*2*KILO
+for j,64*KILO,totalsize,64*KILO
+	for i,0,64*KILO
+		dat = peek(fbuf,i)
+		poke fbuf,i+j,dat
+	next
+next
+
+sum = 0
+for i,0,totalsize-2
+	sum = (sum + peek(fbuf,i)) & $ffff
+next
+sumh = (sum >> 8)& $ff
+suml = (sum & $ff)
+poke fbuf,totalsize-2,suml
+poke fbuf,totalsize-1,sumh
+
+ptr = 0
+dumpsize = totalsize
+ofsx = 320+48
+gosub *dump
+
+dialog "ws",17,"file"
+if(stat==1){
+	filename = refstr
+	gosub *get_extension
+	if (extension != ".WS") : filename += ".ws"
+	bsave filename,fbuf,totalsize	//save file
+}
+
+return
 //-------
 *byte2string
 string = str(dat)+" BYTES ="
@@ -601,9 +745,11 @@ next
 return
 //-------
 *dump
+ofsy = 32
+color 255,255,255
+boxf ofsx-64,ofsy,ofsx+256,ofsy+640
+
 if(dumpsize==0):return
-//dumpwidth = 512
-//pitch = int(32*KILO/dumpwidth)*dumpwidth
 dumpwidth = 256
 if(dumpsize < 256*KILO){
 	pitch = 16*KILO
@@ -637,7 +783,6 @@ for i,0,dumpsize
 	dat = peek(fbuf,ptr)
 	ptr++
 
-//	if(dat!=$ff)and(dat!=$00):dat=128
 	color 0,dat,0
 	pset x,y
 next
@@ -655,5 +800,265 @@ kb = int(dumpsize/KILO)
 print str(kb)+"KB"
 color 0,0,0
 redraw 1
+return
+//------------PC-6001 キャラクターコードテーブル
+*setp6chr
+sdim p6chrdata,2,0xFF
+p6chrdata(0x00) = " " 
+p6chrdata(0x01) = "月" 
+p6chrdata(0x02) = "火" 
+p6chrdata(0x03) = "水" 
+p6chrdata(0x04) = "木"
+p6chrdata(0x05) = "金"
+p6chrdata(0x06) = "土"
+p6chrdata(0x07) = "日"
+p6chrdata(0x08) = "年"
+p6chrdata(0x09) = "円"
+p6chrdata(0x0a) = "時"
+p6chrdata(0x0b) = "分"
+p6chrdata(0x0c) = "秒"
+p6chrdata(0x0d) = "百"
+p6chrdata(0x0e) = "千"
+p6chrdata(0x0f) = "万"
+p6chrdata(0x10) = "π "
+p6chrdata(0x11) = "┴"
+p6chrdata(0x12) = "┬"
+p6chrdata(0x13) = "┤"
+p6chrdata(0x14) = "├"
+p6chrdata(0x15) = "┼"
+p6chrdata(0x16) = "│"
+p6chrdata(0x17) = "─"
+p6chrdata(0x18) = "┌"
+p6chrdata(0x19) = "┐"
+p6chrdata(0x1a) = "└"
+p6chrdata(0x1b) = "┘"
+p6chrdata(0x1c) = "×"
+p6chrdata(0x1d) = "大"
+p6chrdata(0x1e) = "中"
+p6chrdata(0x1f) = "小"
+p6chrdata(0x20) = "　"
+p6chrdata(0x21) = "！"
+p6chrdata(0x22) = "”"
+p6chrdata(0x23) = "＃"
+p6chrdata(0x24) = "＄"
+p6chrdata(0x25) = "％"
+p6chrdata(0x26) = "＆"
+p6chrdata(0x27) = "’"
+p6chrdata(0x28) = "（"
+p6chrdata(0x29) = "）"
+p6chrdata(0x2a) = "＊"
+p6chrdata(0x2b) = "＋"
+p6chrdata(0x2c) = "，"
+p6chrdata(0x2d) = "－"
+p6chrdata(0x2e) = "．"
+p6chrdata(0x2f) = "／"
+p6chrdata(0x30) = "０"
+p6chrdata(0x31) = "１"
+p6chrdata(0x32) = "２"
+p6chrdata(0x33) = "３"
+p6chrdata(0x34) = "４"
+p6chrdata(0x35) = "５"
+p6chrdata(0x36) = "６"
+p6chrdata(0x37) = "７"
+p6chrdata(0x38) = "８"
+p6chrdata(0x39) = "９"
+p6chrdata(0x3a) = "："
+p6chrdata(0x3b) = "；"
+p6chrdata(0x3c) = "＜"
+p6chrdata(0x3d) = "＝"
+p6chrdata(0x3e) = "＞"
+p6chrdata(0x3f) = "?"
+p6chrdata(0x40) = "@"
+p6chrdata(0x41) = "A"
+p6chrdata(0x42) = "B"
+p6chrdata(0x43) = "C"
+p6chrdata(0x44) = "D"
+p6chrdata(0x45) = "E"
+p6chrdata(0x46) = "F"
+p6chrdata(0x47) = "G"
+p6chrdata(0x48) = "H"
+p6chrdata(0x49) = "I"
+p6chrdata(0x4a) = "J"
+p6chrdata(0x4b) = "K"
+p6chrdata(0x4c) = "L"
+p6chrdata(0x4d) = "M"
+p6chrdata(0x4e) = "N"
+p6chrdata(0x4f) = "O"
+p6chrdata(0x50) = "P"
+p6chrdata(0x51) = "Q"
+p6chrdata(0x52) = "R"
+p6chrdata(0x53) = "S"
+p6chrdata(0x54) = "T"
+p6chrdata(0x55) = "U"
+p6chrdata(0x56) = "V"
+p6chrdata(0x57) = "W"
+p6chrdata(0x58) = "X"
+p6chrdata(0x59) = "Y"
+p6chrdata(0x5a) = "Z"
+p6chrdata(0x5b) = "["
+p6chrdata(0x5c) = "\"
+p6chrdata(0x5d) = "]"
+p6chrdata(0x5e) = "^"
+p6chrdata(0x5f) = "_"
+p6chrdata(0x60) = " "
+p6chrdata(0x61) = "a"
+p6chrdata(0x62) = "b"
+p6chrdata(0x63) = "c"
+p6chrdata(0x64) = "d"
+p6chrdata(0x65) = "e"
+p6chrdata(0x66) = "f"
+p6chrdata(0x67) = "g"
+p6chrdata(0x68) = "h"
+p6chrdata(0x69) = "i"
+p6chrdata(0x6a) = "j"
+p6chrdata(0x6b) = "k"
+p6chrdata(0x6c) = "l"
+p6chrdata(0x6d) = "m"
+p6chrdata(0x6e) = "n"
+p6chrdata(0x6f) = "o"
+p6chrdata(0x70) = "p"
+p6chrdata(0x71) = "q"
+p6chrdata(0x72) = "r"
+p6chrdata(0x73) = "s"
+p6chrdata(0x74) = "t"
+p6chrdata(0x75) = "u"
+p6chrdata(0x76) = "v"
+p6chrdata(0x77) = "w"
+p6chrdata(0x78) = "x"
+p6chrdata(0x79) = "y"
+p6chrdata(0x7a) = "z"
+p6chrdata(0x7b) = "{"
+p6chrdata(0x7c) = "|"
+p6chrdata(0x7d) = "}"
+p6chrdata(0x7e) = "~"
+p6chrdata(0x7f) = "　"
+p6chrdata(0x80) = "(スペード)" 
+p6chrdata(0x81) = "(ハート)" 
+p6chrdata(0x82) = "(クラブ)" 
+p6chrdata(0x83) = "(ダイヤ)"
+p6chrdata(0x84) = "〇"
+p6chrdata(0x85) = "●"
+p6chrdata(0x86) = "を"
+p6chrdata(0x87) = "ぁ"
+p6chrdata(0x88) = "ぃ"
+p6chrdata(0x89) = "ぅ"
+p6chrdata(0x8a) = "ぇ"
+p6chrdata(0x8b) = "ぉ"
+p6chrdata(0x8c) = "ゃ"
+p6chrdata(0x8d) = "ゅ"
+p6chrdata(0x8e) = "ょ"
+p6chrdata(0x8f) = "っ"
+p6chrdata(0x90) = "　"
+p6chrdata(0x91) = "あ"
+p6chrdata(0x92) = "い"
+p6chrdata(0x93) = "う"
+p6chrdata(0x94) = "え"
+p6chrdata(0x95) = "お"
+p6chrdata(0x96) = "か"
+p6chrdata(0x97) = "き"
+p6chrdata(0x98) = "く"
+p6chrdata(0x99) = "け"
+p6chrdata(0x9a) = "こ"
+p6chrdata(0x9b) = "さ"
+p6chrdata(0x9c) = "し"
+p6chrdata(0x9d) = "す"
+p6chrdata(0x9e) = "せ"
+p6chrdata(0x9f) = "そ"
+p6chrdata(0xa0) = "　"
+p6chrdata(0xa1) = "。"
+p6chrdata(0xa2) = "「"
+p6chrdata(0xa3) = "」"
+p6chrdata(0xa4) = "、"
+p6chrdata(0xa5) = "・"
+p6chrdata(0xa6) = "ヲ"
+p6chrdata(0xa7) = "ァ"
+p6chrdata(0xa8) = "ィ"
+p6chrdata(0xa9) = "ゥ"
+p6chrdata(0xaa) = "ェ"
+p6chrdata(0xab) = "ォ"
+p6chrdata(0xac) = "ャ"
+p6chrdata(0xad) = "ュ"
+p6chrdata(0xae) = "ョ"
+p6chrdata(0xaf) = "ッ"
+p6chrdata(0xb0) = "ー"
+p6chrdata(0xb1) = "ア"
+p6chrdata(0xb2) = "イ"
+p6chrdata(0xb3) = "ウ"
+p6chrdata(0xb4) = "エ"
+p6chrdata(0xb5) = "オ"
+p6chrdata(0xb6) = "カ"
+p6chrdata(0xb7) = "キ"
+p6chrdata(0xb8) = "ク"
+p6chrdata(0xb9) = "ケ"
+p6chrdata(0xba) = "コ"
+p6chrdata(0xbb) = "サ"
+p6chrdata(0xbc) = "シ"
+p6chrdata(0xbd) = "ス"
+p6chrdata(0xbe) = "セ"
+p6chrdata(0xbf) = "ソ"
+p6chrdata(0xc0) = "タ"
+p6chrdata(0xc1) = "チ"
+p6chrdata(0xc2) = "ツ"
+p6chrdata(0xc3) = "テ"
+p6chrdata(0xc4) = "ト"
+p6chrdata(0xc5) = "ナ"
+p6chrdata(0xc6) = "ニ"
+p6chrdata(0xc7) = "ヌ"
+p6chrdata(0xc8) = "ネ"
+p6chrdata(0xc9) = "ノ"
+p6chrdata(0xca) = "ハ"
+p6chrdata(0xcb) = "ヒ"
+p6chrdata(0xcc) = "フ"
+p6chrdata(0xcd) = "ヘ"
+p6chrdata(0xce) = "ホ"
+p6chrdata(0xcf) = "マ"
+p6chrdata(0xd0) = "ミ"
+p6chrdata(0xd1) = "ム"
+p6chrdata(0xd2) = "メ"
+p6chrdata(0xd3) = "モ"
+p6chrdata(0xd4) = "ヤ"
+p6chrdata(0xd5) = "ユ"
+p6chrdata(0xd6) = "ヨ"
+p6chrdata(0xd7) = "ラ"
+p6chrdata(0xd8) = "リ"
+p6chrdata(0xd9) = "ル"
+p6chrdata(0xda) = "レ"
+p6chrdata(0xdb) = "ロ"
+p6chrdata(0xdc) = "ワ"
+p6chrdata(0xdd) = "ン"
+p6chrdata(0xde) = "゛"
+p6chrdata(0xdf) = "゜"
+p6chrdata(0xe0) = "た"
+p6chrdata(0xe1) = "ち"
+p6chrdata(0xe2) = "つ"
+p6chrdata(0xe3) = "て"
+p6chrdata(0xe4) = "と"
+p6chrdata(0xe5) = "な"
+p6chrdata(0xe6) = "に"
+p6chrdata(0xe7) = "ぬ"
+p6chrdata(0xe8) = "ね"
+p6chrdata(0xe9) = "の"
+p6chrdata(0xea) = "は"
+p6chrdata(0xeb) = "ひ"
+p6chrdata(0xec) = "ふ"
+p6chrdata(0xed) = "へ"
+p6chrdata(0xee) = "ほ"
+p6chrdata(0xef) = "ま"
+p6chrdata(0xf0) = "み"
+p6chrdata(0xf1) = "む"
+p6chrdata(0xf2) = "め"
+p6chrdata(0xf3) = "も"
+p6chrdata(0xf4) = "や"
+p6chrdata(0xf5) = "ゆ"
+p6chrdata(0xf6) = "よ"
+p6chrdata(0xf7) = "ら"
+p6chrdata(0xf8) = "り"
+p6chrdata(0xf9) = "る"
+p6chrdata(0xfa) = "れ"
+p6chrdata(0xfb) = "ろ"
+p6chrdata(0xfc) = "わ"
+p6chrdata(0xfd) = "ん"
+p6chrdata(0xfe) = "　"
+p6chrdata(0xff) = "　"
 return
 
