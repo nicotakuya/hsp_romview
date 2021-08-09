@@ -7,7 +7,7 @@ nes/smc/gb/ws/p6/cas file support.
 
 ## 特徴
 
-・マッパーの確認(nes)
+・マッパーやミラーリング設定の確認(nes)
 
 ・バンク数の変換(nes)
 
