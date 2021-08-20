@@ -1,4 +1,4 @@
-// ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas)
+// ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas/pce)
 // for HSP 3.x(windows)
 // by takuya matsubara
 
@@ -9,8 +9,18 @@
 // http://daifukkat.su/docs/wsman/
 // https://github.com/Stephane-D/SGDK/blob/master/src/boot/rom_head.c
 
+#define ROMTYPE_NONE 0
+#define ROMTYPE_NES 1
+#define ROMTYPE_SNES 2
+#define ROMTYPE_GB 3
+#define ROMTYPE_MD 4
+#define ROMTYPE_PCE 5
+#define ROMTYPE_P6 6
+#define ROMTYPE_MSX 7
+#define ROMTYPE_WS 8
+
 screen 0,1200,680
-title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas/rom)"
+title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas/rom/pce)"
 
 KILO = 1024
 MEGA = 1024*1024
@@ -38,48 +48,52 @@ filename = refstr
 bload filename,fbuf	// binary load
 totalsize = strsize	// file size
 
-// delete path
+gosub *get_nopathfilename
+gosub *get_extension
+print "Filename:"+nopathfilename
+print "Filesize:"+str(totalsize)+" BYTES"
+
+gosub *get_romtype
+if (romtype == ROMTYPE_NES):gosub *nesfile
+if (romtype == ROMTYPE_SNES):gosub *smcfile
+if (romtype == ROMTYPE_GB):gosub *gbfile
+if (romtype == ROMTYPE_MD):gosub *mdfile
+if (romtype == ROMTYPE_P6):gosub *p6file
+if (romtype == ROMTYPE_MSX):gosub *msxfile
+if (romtype == ROMTYPE_PCE):gosub *pcefile
+if (romtype == ROMTYPE_WS):gosub *wsfile
+if (romtype == ROMTYPE_NONE):print "Unknown file"
+return
+//-----
+*get_romtype
+romtype = ROMTYPE_NONE
+if (extension == ".BIN")or(extension == ".ROM"){
+	ptr = 0
+	datcnt = 2
+	gosub *readstring
+	if( string == "AB"){	// ABで始まっている場合はMSX
+		romtype = ROMTYPE_MSX
+		return
+	}
+}
+if (extension == ".BIN"):romtype = ROMTYPE_MD
+if (extension == ".NES") :romtype = ROMTYPE_NES
+if (extension == ".GB"):romtype = ROMTYPE_GB
+if (extension == ".SMC"):romtype = ROMTYPE_SNES
+if (extension == ".PCE"):romtype = ROMTYPE_PCE
+if (extension == ".WS")or(extension == ".WSC"):romtype = ROMTYPE_WS
+if (extension == ".P6")or(extension == ".CAS"):romtype = ROMTYPE_P6
+return
+//-----
+*get_nopathfilename
 ptr = strlen(filename)
 repeat
 	if(ptr==0):break
 	if(peek(filename,ptr-1)==$5c):break 	// slash
 	ptr--
 loop
-
-print "Filename:"+strmid(filename,ptr,255)
-print "Filesize:"+str(totalsize)+" BYTES"
-gosub *get_extension
-if (extension == ".ROM"){
-	gosub *msxfile
-	return
-}
-if (extension == ".NES") {
-	gosub *nesfile
-	return
-}
-if (extension == ".BIN") {
-	gosub *mdfile
-	return
-}
-if (extension == ".GB") {
-	gosub *gbfile
-	return
-}
-if (extension == ".SMC"){
-	gosub *smcfile
-	return
-}
-if (extension == ".WS") or (extension == ".WSC"){
-	gosub *wsfile
-	return
-}
-if (extension == ".P6") or (extension == ".CAS"){
-	gosub *p6file
-	return
-}
-print "Unknown file"
+nopathfilename = strmid(filename,ptr,255)
 return
-
 //-----
 *get_extension
 extension = ""
@@ -100,20 +114,12 @@ dat = totalsize*8
 gosub *bit2string
 print string
 
-ptr=0
-datcnt = 2
-gosub *readstring
-print "key:\""+string+"\""
-if string!="AB":print "header error"
-
-ptr=0
+ptr = 0
 dumpsize = totalsize
 ofsx = 320+160
 gosub *dump
-
 gosub *change00toFF
 return
-
 
 //--------------00の連続をFFに変換
 *change00toFF
@@ -151,6 +157,22 @@ if(stat==1){
 	bsave filename,fbuf,totalsize	//save file
 }
 
+return
+//-----
+*pcefile
+print "Type:PC Engine"
+
+dat = totalsize*8	
+gosub *bit2string
+print string
+
+headersize = totalsize & 1023 // 1024の倍数じゃない場合はヘッダ付き
+print "Header Size:"+str(headersize)+"Bytes"
+
+ptr = 0
+dumpsize = totalsize
+ofsx = 320+160
+gosub *dump
 return
 //-----
 *mdfile
