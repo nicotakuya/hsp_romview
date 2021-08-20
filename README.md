@@ -23,6 +23,8 @@ p6/cas : PC-6001 tape image
 
 bin : megadrive
 
+rom : MSX
+
 ## screenshot
 
 nes file.
