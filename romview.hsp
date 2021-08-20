@@ -10,7 +10,7 @@
 // https://github.com/Stephane-D/SGDK/blob/master/src/boot/rom_head.c
 
 screen 0,1200,680
-title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas)"
+title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas/rom)"
 
 KILO = 1024
 MEGA = 1024*1024
@@ -49,6 +49,10 @@ loop
 print "Filename:"+strmid(filename,ptr,255)
 print "Filesize:"+str(totalsize)+" BYTES"
 gosub *get_extension
+if (extension == ".ROM"){
+	gosub *msxfile
+	return
+}
 if (extension == ".NES") {
 	gosub *nesfile
 	return
@@ -87,6 +91,66 @@ while (ptr < strlen(filename))
 	extension += strf("%c",dat)
 	ptr++
 wend
+return
+//-----
+*msxfile
+print "Type:MSX ROM"
+
+dat = totalsize*8	
+gosub *bit2string
+print string
+
+ptr=0
+datcnt = 2
+gosub *readstring
+print "key:\""+string+"\""
+if string!="AB":print "header error"
+
+ptr=0
+dumpsize = totalsize
+ofsx = 320+160
+gosub *dump
+
+gosub *change00toFF
+return
+
+
+//--------------00‚Ì˜A‘±‚ðFF‚É•ÏŠ·
+*change00toFF
+j = 0
+for i,0,totalsize
+	dat = peek(fbuf,i)
+	if(dat==0):	j++
+next
+if((totalsize/2) > j):return
+	
+dialog "00‚Ì˜A‘±‚ðFF‚É•ÏŠ·‚µ‚Ü‚·",2
+if(stat!=6):return
+	
+for j,0,totalsize,4*KILO
+	sum = 0
+	for i,0,4*KILO
+		dat = peek(fbuf,j+i)
+		sum |= dat
+	next
+	if(sum==0){
+		for i,0,4*KILO
+			poke fbuf,j+i,$ff
+		next
+	}
+next
+
+ptr=0
+dumpsize = totalsize
+ofsx = 320+160
+gosub *dump
+
+dialog "rom",17,"file"
+if(stat==1){
+	filename = refstr
+	bsave filename,fbuf,totalsize	//save file
+}
+
 return
 //-----
 *mdfile
