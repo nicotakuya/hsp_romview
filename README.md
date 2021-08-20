@@ -19,11 +19,13 @@ gb : gameboy
 
 ws/wsc : wonderswan
 
-p6/cas : PC-6001 tape image
+p6/cas : PC-6001 cassette tape
 
-bin : megadrive
+bin : megadrive or MSX
 
 rom : MSX
+
+pce : PC Engine
 
 ## screenshot
 
