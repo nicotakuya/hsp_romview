@@ -18,9 +18,10 @@
 #define ROMTYPE_P6 6
 #define ROMTYPE_MSX 7
 #define ROMTYPE_WS 8
+#define ROMTYPE_P8 9
 
 screen 0,1200,680
-title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas/rom/pce)"
+title "ROM viewer(nes/gb/bin/smc/ws/wsc/p6/cas/cmt/rom/pce)"
 
 KILO = 1024
 MEGA = 1024*1024
@@ -59,6 +60,7 @@ if (romtype == ROMTYPE_SNES):gosub *smcfile
 if (romtype == ROMTYPE_GB):gosub *gbfile
 if (romtype == ROMTYPE_MD):gosub *mdfile
 if (romtype == ROMTYPE_P6):gosub *p6file
+if (romtype == ROMTYPE_P8):gosub *p8file
 if (romtype == ROMTYPE_MSX):gosub *msxfile
 if (romtype == ROMTYPE_PCE):gosub *pcefile
 if (romtype == ROMTYPE_WS):gosub *wsfile
@@ -75,14 +77,18 @@ if (extension == ".BIN")or(extension == ".ROM"){
 		romtype = ROMTYPE_MSX
 		return
 	}
+	// not found 'AB'
 }
-if (extension == ".BIN"):romtype = ROMTYPE_MD
+if (extension == ".BIN")or(extension == ".MD"):romtype = ROMTYPE_MD
+if (extension == ".ROM")or(extension == ".MX1")or(extension == ".MX2"):romtype = ROMTYPE_MSX
 if (extension == ".NES") :romtype = ROMTYPE_NES
 if (extension == ".GB"):romtype = ROMTYPE_GB
+if (extension == ".SFC"):romtype = ROMTYPE_SNES
 if (extension == ".SMC"):romtype = ROMTYPE_SNES
 if (extension == ".PCE"):romtype = ROMTYPE_PCE
 if (extension == ".WS")or(extension == ".WSC"):romtype = ROMTYPE_WS
 if (extension == ".P6")or(extension == ".CAS"):romtype = ROMTYPE_P6
+if (extension == ".CMT"):romtype = ROMTYPE_P8
 return
 //-----
 *get_nopathfilename
@@ -97,7 +103,14 @@ return
 //-----
 *get_extension
 extension = ""
-ptr = instr(filename,0,".")
+ptr = strlen(filename)-1
+repeat
+	if(ptr < 0):break
+	if(strmid(filename,ptr,1) == "."){
+		break
+	}
+	ptr--
+loop
 if (ptr < 0) :return
 while (ptr < strlen(filename))
 	dat = peek(filename,ptr)
@@ -114,10 +127,23 @@ dat = totalsize*8
 gosub *bit2string
 print string
 
+ptr = 2
+gosub *readword
+print "INIT:0x"+strf("%04X",dat)
+
+gosub *readword
+print "STATEMENT ADDRESS:0x"+strf("%04X",dat)
+
+gosub *readword
+print "DEVICE EXPANTION:0x"+strf("%04X",dat)
+
+gosub *readword
+print "TEXT ADDRESS:0x"+strf("%04X",dat)
+
 ptr = 0
 dumpsize = totalsize
 ofsx = 320+160
-gosub *dump
+gosub *dump // msx file
 gosub *change00toFF
 return
 
@@ -149,7 +175,7 @@ next
 ptr=0
 dumpsize = totalsize
 ofsx = 320+160
-gosub *dump
+gosub *dump // msx file
 
 dialog "rom",17,"file"
 if(stat==1){
@@ -166,7 +192,7 @@ dat = totalsize*8
 gosub *bit2string
 print string
 
-headersize = totalsize & 1023 // 1024‚Ì”{”‚¶‚á‚È‚¢ê‡‚Íƒwƒbƒ_•t‚«
+headersize = totalsize & 1023 // 1024‚Ì”{”‚¶‚á‚È‚¢ê‡‚Íƒwƒbƒ_‚Æ„’è
 print "Header Size:"+str(headersize)+"Bytes"
 
 ptr = 0
@@ -249,13 +275,20 @@ print "Country Support:\""+string+"\""
 ptr=0
 dumpsize = totalsize
 ofsx = 320+160
-gosub *dump
+gosub *dump // pce file
 
 return
+
+//-----
+*p8file
+gosub *setp8chr
+print "Type:PC-8001 cassette tape"
+goto *pxfile
 //-----
 *p6file
 gosub *setp6chr
 print "Type:PC-6001 cassette tape"
+*pxfile
 ptr=0
 repeat
 	if( ptr >= totalsize ):break
@@ -266,17 +299,17 @@ repeat
 		gosub *readbyte
 		if(dat == $D3){
 			i++
-			if(i>=10):break
+			if(i>=10):break	// found
 		}else{
 			i=0
 		}
 	loop
-	if( ptr >= totalsize ):break
+	if( ptr >= totalsize ):break	// end of tape
 	
 	string = ""
 	for i,0,6
 		gosub *readbyte
-		string += p6chrdata(dat)
+		string += chrdata(dat)
 	next
 	print
 	print "Tape Filename:\""+string+"\""
@@ -289,21 +322,20 @@ repeat
 		gosub *readbyte
 		if(dat == $00){
 			i++
-			if(i>=10):break
+			if(i>=10):break	// found
 		}else{
 			i=0
 		}
 	loop
-
 	print "Data size:"+str((ptr-10) - ptr_backup)+" Bytes"
 loop
 
 ptr=0
 dumpsize = totalsize
 ofsx = 320+48
-gosub *dump
-
+gosub *dump // P6 file
 return
+
 
 //-----
 *smcfile
@@ -400,7 +432,7 @@ print "Checksum:"+strf("%04X",dat)
 ptr = 0+headersize
 dumpsize = prgsize
 ofsx = 440
-gosub *dump
+gosub *dump // smc file
 
 pos 320+64,8
 dat = prgsize
@@ -452,21 +484,25 @@ if (mirroring==0){
 	print "(VRAM A10 <- PPU A10)"
 }
 
-if (mapper!=2){
+if (mapper != 2){
 	ptr = headersize
 	dumpsize = prgsize
 	ofsx = 320
-	gosub *dump
+	gosub *dump // nes file(PRG)
 
 	ptr = headersize+prgsize
 	dumpsize = chrsize
 	ofsx = 660
-	gosub *dump
+	gosub *dump // nes file(CHR)
+	if(mapper == 3){
+		gosub *mapper3_bank
+	}
 }else{	// mapper2
 	ptr = headersize
 	dumpsize = prgsize
 	ofsx = 320
-	gosub *dump
+	gosub *dump // nes file(PRG)
+	gosub *mapper2_bank
 
 	gosub *change8bank	//change 8Bank
 }
@@ -482,7 +518,7 @@ if(chrsize){
 	print "CHR-ROM size:"+string
 }
 return
-//----------Mapper2A8ƒoƒ“ƒN‚É•ÏŠ·(nes)
+//----------Mapper2‚Å4ƒoƒ“ƒN‚Ìê‡A8ƒoƒ“ƒN‚É•ÏŠ·(nes)
 *change8bank
 lastbank = int(prgsize/(16*KILO))			// Œ»Ý‚ÌBANK”
 totalbank = 8								// ‚ ‚é‚×‚«BANK”
@@ -511,7 +547,8 @@ poke fbuf,4,totalbank		//ƒwƒbƒ_C³
 ptr = headersize
 dumpsize = prgsize
 ofsx = 320
-gosub *dump
+gosub *dump // nes file
+gosub *mapper2_bank
 
 dialog "nes",17,"file"
 if(stat==1){
@@ -687,7 +724,7 @@ print "logo"
 ptr = 0
 dumpsize = totalsize
 ofsx = 320
-gosub *dump
+gosub *dump // gb file
 return
 //--------------
 *wsfile
@@ -806,7 +843,7 @@ if (sum != dat){
 ptr = 0
 dumpsize = totalsize
 ofsx = 320+48
-gosub *dump
+gosub *dump // ws file
 
 gosub *change256kb	//256KB‚É•ÏŠ·
 
@@ -837,7 +874,7 @@ poke fbuf,totalsize-1,sumh
 ptr = 0
 dumpsize = totalsize
 ofsx = 320+48
-gosub *dump
+gosub *dump // ws file
 
 dialog "ws",17,"file"
 if(stat==1){
@@ -951,8 +988,9 @@ if(dumpsize < 256*KILO){
 }
 
 for i,0,dumpsize
-	x = ((i/step) \ dumpwidth)+ofsx
-	y = int((i/step)/dumpwidth)+ofsy
+	j = int(i/step)
+	x = (j \ dumpwidth)+ofsx
+	y = int(j / dumpwidth)+ofsy
 	if((i \ pitch)==0){
 		redraw 1
 		kb = int(i/KILO)
@@ -960,15 +998,10 @@ for i,0,dumpsize
 		line x-64,y,x,y
 		pos x-64,y+2
 		print str(kb)+"KB"
-		if(mapper==2){
-			pos x-64,y+2+16
-			print "(BANK"+str(i/pitch)+")"
-		}
 		redraw 0
 	}
 	dat = peek(fbuf,ptr)
 	ptr++
-
 	color 0,dat,0
 	pset x,y
 next
@@ -987,264 +1020,517 @@ print str(kb)+"KB"
 color 0,0,0
 redraw 1
 return
+//----
+*mapper2_bank
+redraw 0
+for i,0,dumpsize
+	j = int(i/step)
+	x = (j \ dumpwidth)+ofsx
+	y = int(j / dumpwidth)+ofsy
+	if((i \ (16*KILO))==0){
+		color 0,0,255
+		line x-32,y,x,y
+		pos x-44,y+2+14
+		print "BANK"+str(i/(16*KILO))
+	}
+next
+color 0,0,0
+redraw 1
+return
+//----
+*mapper3_bank
+redraw 0
+for i,0,dumpsize
+	j = int(i/step)
+	x = (j \ dumpwidth)+ofsx
+	y = int(j / dumpwidth)+ofsy
+	if((i \ (8*KILO))==0){
+		color 0,0,255
+		line x-32,y,x,y
+		pos x-44,y+2+14
+		print "BANK"+str(i/(8*KILO))
+	}
+next
+color 0,0,0
+redraw 1
+return
+//------------PC-8001 ƒLƒƒƒ‰ƒNƒ^[ƒR[ƒhƒe[ƒuƒ‹
+*setp8chr
+sdim chrdata,2,0xFF
+chrdata(0x20) = "@"
+chrdata(0x21) = "I"
+chrdata(0x22) = "h"
+chrdata(0x23) = "”"
+chrdata(0x24) = ""
+chrdata(0x25) = "“"
+chrdata(0x26) = "•"
+chrdata(0x27) = "f"
+chrdata(0x28) = "i"
+chrdata(0x29) = "j"
+chrdata(0x2a) = "–"
+chrdata(0x2b) = "{"
+chrdata(0x2c) = "C"
+chrdata(0x2d) = "|"
+chrdata(0x2e) = "D"
+chrdata(0x2f) = "^"
+chrdata(0x30) = "‚O"
+chrdata(0x31) = "‚P"
+chrdata(0x32) = "‚Q"
+chrdata(0x33) = "‚R"
+chrdata(0x34) = "‚S"
+chrdata(0x35) = "‚T"
+chrdata(0x36) = "‚U"
+chrdata(0x37) = "‚V"
+chrdata(0x38) = "‚W"
+chrdata(0x39) = "‚X"
+chrdata(0x3a) = "F"
+chrdata(0x3b) = "G"
+chrdata(0x3c) = "ƒ"
+chrdata(0x3d) = ""
+chrdata(0x3e) = "„"
+chrdata(0x3f) = "?"
+chrdata(0x40) = "@"
+chrdata(0x41) = "A"
+chrdata(0x42) = "B"
+chrdata(0x43) = "C"
+chrdata(0x44) = "D"
+chrdata(0x45) = "E"
+chrdata(0x46) = "F"
+chrdata(0x47) = "G"
+chrdata(0x48) = "H"
+chrdata(0x49) = "I"
+chrdata(0x4a) = "J"
+chrdata(0x4b) = "K"
+chrdata(0x4c) = "L"
+chrdata(0x4d) = "M"
+chrdata(0x4e) = "N"
+chrdata(0x4f) = "O"
+chrdata(0x50) = "P"
+chrdata(0x51) = "Q"
+chrdata(0x52) = "R"
+chrdata(0x53) = "S"
+chrdata(0x54) = "T"
+chrdata(0x55) = "U"
+chrdata(0x56) = "V"
+chrdata(0x57) = "W"
+chrdata(0x58) = "X"
+chrdata(0x59) = "Y"
+chrdata(0x5a) = "Z"
+chrdata(0x5b) = "["
+chrdata(0x5c) = "\"
+chrdata(0x5d) = "]"
+chrdata(0x5e) = "^"
+chrdata(0x5f) = "_"
+chrdata(0x60) = " "
+chrdata(0x61) = "a"
+chrdata(0x62) = "b"
+chrdata(0x63) = "c"
+chrdata(0x64) = "d"
+chrdata(0x65) = "e"
+chrdata(0x66) = "f"
+chrdata(0x67) = "g"
+chrdata(0x68) = "h"
+chrdata(0x69) = "i"
+chrdata(0x6a) = "j"
+chrdata(0x6b) = "k"
+chrdata(0x6c) = "l"
+chrdata(0x6d) = "m"
+chrdata(0x6e) = "n"
+chrdata(0x6f) = "o"
+chrdata(0x70) = "p"
+chrdata(0x71) = "q"
+chrdata(0x72) = "r"
+chrdata(0x73) = "s"
+chrdata(0x74) = "t"
+chrdata(0x75) = "u"
+chrdata(0x76) = "v"
+chrdata(0x77) = "w"
+chrdata(0x78) = "x"
+chrdata(0x79) = "y"
+chrdata(0x7a) = "z"
+chrdata(0x7b) = "{"
+chrdata(0x7c) = "|"
+chrdata(0x7d) = "}"
+chrdata(0x7e) = "~"
+chrdata(0x7f) = "@"
+chrdata(0xe0) = "ŽlŠp1"
+chrdata(0xe1) = "ŽlŠp2"
+chrdata(0xe2) = "ŽlŠp3"
+chrdata(0xe3) = "ŽlŠp4"
+chrdata(0xe4) = "ŽlŠp5"
+chrdata(0xe5) = "ŽlŠp6"
+chrdata(0xe6) = "ŽlŠp7"
+chrdata(0xe7) = "ŽlŠp8"
+chrdata(0xe8) = "ŽlŠp9"
+chrdata(0xe9) = "ŽlŠp10"
+chrdata(0xea) = "ŽlŠp11"
+chrdata(0xec) = "ŽlŠp12"
+chrdata(0xed) = "ŽlŠp13"
+chrdata(0xee) = "ŽlŠp14"
+chrdata(0xef) = "„©"
+chrdata(0x90) = "„¨"
+chrdata(0x91) = "„¦"
+chrdata(0x92) = "„§"
+chrdata(0x93) = "„¥"
+chrdata(0x94) = "P"
+chrdata(0x95) = "„ "
+chrdata(0x96) = "„Ÿ"
+chrdata(0x97) = "„¡"
+chrdata(0x98) = "„¢"
+chrdata(0x99) = "„¤"
+chrdata(0x9a) = "„£"
+chrdata(0x9c) = "‰~ŒÊ1"
+chrdata(0x9d) = "‰~ŒÊ2"
+chrdata(0x9e) = "‰~ŒÊ3"
+chrdata(0x9f) = "‰~ŒÊ4"
+chrdata(0xa0) = "@"
+chrdata(0xa1) = "B"
+chrdata(0xa2) = "u"
+chrdata(0xa3) = "v"
+chrdata(0xa4) = "A"
+chrdata(0xa5) = "E"
+chrdata(0xa6) = "ƒ’"
+chrdata(0xa7) = "ƒ@"
+chrdata(0xa8) = "ƒB"
+chrdata(0xa9) = "ƒD"
+chrdata(0xaa) = "ƒF"
+chrdata(0xab) = "ƒH"
+chrdata(0xac) = "ƒƒ"
+chrdata(0xad) = "ƒ…"
+chrdata(0xae) = "ƒ‡"
+chrdata(0xaf) = "ƒb"
+chrdata(0xb0) = "["
+chrdata(0xb1) = "ƒA"
+chrdata(0xb2) = "ƒC"
+chrdata(0xb3) = "ƒE"
+chrdata(0xb4) = "ƒG"
+chrdata(0xb5) = "ƒI"
+chrdata(0xb6) = "ƒJ"
+chrdata(0xb7) = "ƒL"
+chrdata(0xb8) = "ƒN"
+chrdata(0xb9) = "ƒP"
+chrdata(0xba) = "ƒR"
+chrdata(0xbb) = "ƒT"
+chrdata(0xbc) = "ƒV"
+chrdata(0xbd) = "ƒX"
+chrdata(0xbe) = "ƒZ"
+chrdata(0xbf) = "ƒ\"
+chrdata(0xc0) = "ƒ^"
+chrdata(0xc1) = "ƒ`"
+chrdata(0xc2) = "ƒc"
+chrdata(0xc3) = "ƒe"
+chrdata(0xc4) = "ƒg"
+chrdata(0xc5) = "ƒi"
+chrdata(0xc6) = "ƒj"
+chrdata(0xc7) = "ƒk"
+chrdata(0xc8) = "ƒl"
+chrdata(0xc9) = "ƒm"
+chrdata(0xca) = "ƒn"
+chrdata(0xcb) = "ƒq"
+chrdata(0xcc) = "ƒt"
+chrdata(0xcd) = "ƒw"
+chrdata(0xce) = "ƒz"
+chrdata(0xcf) = "ƒ}"
+chrdata(0xd0) = "ƒ~"
+chrdata(0xd1) = "ƒ€"
+chrdata(0xd2) = "ƒ"
+chrdata(0xd3) = "ƒ‚"
+chrdata(0xd4) = "ƒ„"
+chrdata(0xd5) = "ƒ†"
+chrdata(0xd6) = "ƒˆ"
+chrdata(0xd7) = "ƒ‰"
+chrdata(0xd8) = "ƒŠ"
+chrdata(0xd9) = "ƒ‹"
+chrdata(0xda) = "ƒŒ"
+chrdata(0xdb) = "ƒ"
+chrdata(0xdc) = "ƒ"
+chrdata(0xdd) = "ƒ“"
+chrdata(0xde) = "J"
+chrdata(0xdf) = "K"
+chrdata(0xe0) = "Œrü"
+chrdata(0xe1) = "Œrü"
+chrdata(0xe2) = "Œrü"
+chrdata(0xe3) = "Œrü"
+chrdata(0xe4) = "ŽOŠp1"
+chrdata(0xe5) = "ŽOŠp2"
+chrdata(0xe6) = "ŽOŠp3"
+chrdata(0xe7) = "ŽOŠp4"
+chrdata(0xe8) = "ƒXƒy[ƒh"
+chrdata(0xe9) = "ƒn[ƒg"
+chrdata(0xea) = "ƒ_ƒCƒ„"
+chrdata(0xeb) = "ƒNƒ‰ƒu"
+chrdata(0xec) = "œ"
+chrdata(0xed) = "›"
+chrdata(0xee) = "^"
+chrdata(0xef) = "_"
+chrdata(0xf0) = "?"
+chrdata(0xf1) = "‰~"
+chrdata(0xf2) = "”N"
+chrdata(0xf3) = "ŒŽ"
+chrdata(0xf4) = "“ú"
+chrdata(0xf5) = "Žž"
+chrdata(0xf6) = "•ª"
+chrdata(0xf7) = "•b"
+return
+
 //------------PC-6001 ƒLƒƒƒ‰ƒNƒ^[ƒR[ƒhƒe[ƒuƒ‹
 *setp6chr
-sdim p6chrdata,2,0xFF
-p6chrdata(0x00) = " " 
-p6chrdata(0x01) = "ŒŽ" 
-p6chrdata(0x02) = "‰Î" 
-p6chrdata(0x03) = "…" 
-p6chrdata(0x04) = "–Ø"
-p6chrdata(0x05) = "‹à"
-p6chrdata(0x06) = "“y"
-p6chrdata(0x07) = "“ú"
-p6chrdata(0x08) = "”N"
-p6chrdata(0x09) = "‰~"
-p6chrdata(0x0a) = "Žž"
-p6chrdata(0x0b) = "•ª"
-p6chrdata(0x0c) = "•b"
-p6chrdata(0x0d) = "•S"
-p6chrdata(0x0e) = "ç"
-p6chrdata(0x0f) = "–œ"
-p6chrdata(0x10) = "ƒÎ "
-p6chrdata(0x11) = "„¨"
-p6chrdata(0x12) = "„¦"
-p6chrdata(0x13) = "„§"
-p6chrdata(0x14) = "„¥"
-p6chrdata(0x15) = "„©"
-p6chrdata(0x16) = "„ "
-p6chrdata(0x17) = "„Ÿ"
-p6chrdata(0x18) = "„¡"
-p6chrdata(0x19) = "„¢"
-p6chrdata(0x1a) = "„¤"
-p6chrdata(0x1b) = "„£"
-p6chrdata(0x1c) = "~"
-p6chrdata(0x1d) = "‘å"
-p6chrdata(0x1e) = "’†"
-p6chrdata(0x1f) = "¬"
-p6chrdata(0x20) = "@"
-p6chrdata(0x21) = "I"
-p6chrdata(0x22) = "h"
-p6chrdata(0x23) = "”"
-p6chrdata(0x24) = ""
-p6chrdata(0x25) = "“"
-p6chrdata(0x26) = "•"
-p6chrdata(0x27) = "f"
-p6chrdata(0x28) = "i"
-p6chrdata(0x29) = "j"
-p6chrdata(0x2a) = "–"
-p6chrdata(0x2b) = "{"
-p6chrdata(0x2c) = "C"
-p6chrdata(0x2d) = "|"
-p6chrdata(0x2e) = "D"
-p6chrdata(0x2f) = "^"
-p6chrdata(0x30) = "‚O"
-p6chrdata(0x31) = "‚P"
-p6chrdata(0x32) = "‚Q"
-p6chrdata(0x33) = "‚R"
-p6chrdata(0x34) = "‚S"
-p6chrdata(0x35) = "‚T"
-p6chrdata(0x36) = "‚U"
-p6chrdata(0x37) = "‚V"
-p6chrdata(0x38) = "‚W"
-p6chrdata(0x39) = "‚X"
-p6chrdata(0x3a) = "F"
-p6chrdata(0x3b) = "G"
-p6chrdata(0x3c) = "ƒ"
-p6chrdata(0x3d) = ""
-p6chrdata(0x3e) = "„"
-p6chrdata(0x3f) = "?"
-p6chrdata(0x40) = "@"
-p6chrdata(0x41) = "A"
-p6chrdata(0x42) = "B"
-p6chrdata(0x43) = "C"
-p6chrdata(0x44) = "D"
-p6chrdata(0x45) = "E"
-p6chrdata(0x46) = "F"
-p6chrdata(0x47) = "G"
-p6chrdata(0x48) = "H"
-p6chrdata(0x49) = "I"
-p6chrdata(0x4a) = "J"
-p6chrdata(0x4b) = "K"
-p6chrdata(0x4c) = "L"
-p6chrdata(0x4d) = "M"
-p6chrdata(0x4e) = "N"
-p6chrdata(0x4f) = "O"
-p6chrdata(0x50) = "P"
-p6chrdata(0x51) = "Q"
-p6chrdata(0x52) = "R"
-p6chrdata(0x53) = "S"
-p6chrdata(0x54) = "T"
-p6chrdata(0x55) = "U"
-p6chrdata(0x56) = "V"
-p6chrdata(0x57) = "W"
-p6chrdata(0x58) = "X"
-p6chrdata(0x59) = "Y"
-p6chrdata(0x5a) = "Z"
-p6chrdata(0x5b) = "["
-p6chrdata(0x5c) = "\"
-p6chrdata(0x5d) = "]"
-p6chrdata(0x5e) = "^"
-p6chrdata(0x5f) = "_"
-p6chrdata(0x60) = " "
-p6chrdata(0x61) = "a"
-p6chrdata(0x62) = "b"
-p6chrdata(0x63) = "c"
-p6chrdata(0x64) = "d"
-p6chrdata(0x65) = "e"
-p6chrdata(0x66) = "f"
-p6chrdata(0x67) = "g"
-p6chrdata(0x68) = "h"
-p6chrdata(0x69) = "i"
-p6chrdata(0x6a) = "j"
-p6chrdata(0x6b) = "k"
-p6chrdata(0x6c) = "l"
-p6chrdata(0x6d) = "m"
-p6chrdata(0x6e) = "n"
-p6chrdata(0x6f) = "o"
-p6chrdata(0x70) = "p"
-p6chrdata(0x71) = "q"
-p6chrdata(0x72) = "r"
-p6chrdata(0x73) = "s"
-p6chrdata(0x74) = "t"
-p6chrdata(0x75) = "u"
-p6chrdata(0x76) = "v"
-p6chrdata(0x77) = "w"
-p6chrdata(0x78) = "x"
-p6chrdata(0x79) = "y"
-p6chrdata(0x7a) = "z"
-p6chrdata(0x7b) = "{"
-p6chrdata(0x7c) = "|"
-p6chrdata(0x7d) = "}"
-p6chrdata(0x7e) = "~"
-p6chrdata(0x7f) = "@"
-p6chrdata(0x80) = "(ƒXƒy[ƒh)" 
-p6chrdata(0x81) = "(ƒn[ƒg)" 
-p6chrdata(0x82) = "(ƒNƒ‰ƒu)" 
-p6chrdata(0x83) = "(ƒ_ƒCƒ„)"
-p6chrdata(0x84) = "Z"
-p6chrdata(0x85) = "œ"
-p6chrdata(0x86) = "‚ð"
-p6chrdata(0x87) = "‚Ÿ"
-p6chrdata(0x88) = "‚¡"
-p6chrdata(0x89) = "‚£"
-p6chrdata(0x8a) = "‚¥"
-p6chrdata(0x8b) = "‚§"
-p6chrdata(0x8c) = "‚á"
-p6chrdata(0x8d) = "‚ã"
-p6chrdata(0x8e) = "‚å"
-p6chrdata(0x8f) = "‚Á"
-p6chrdata(0x90) = "@"
-p6chrdata(0x91) = "‚ "
-p6chrdata(0x92) = "‚¢"
-p6chrdata(0x93) = "‚¤"
-p6chrdata(0x94) = "‚¦"
-p6chrdata(0x95) = "‚¨"
-p6chrdata(0x96) = "‚©"
-p6chrdata(0x97) = "‚«"
-p6chrdata(0x98) = "‚­"
-p6chrdata(0x99) = "‚¯"
-p6chrdata(0x9a) = "‚±"
-p6chrdata(0x9b) = "‚³"
-p6chrdata(0x9c) = "‚µ"
-p6chrdata(0x9d) = "‚·"
-p6chrdata(0x9e) = "‚¹"
-p6chrdata(0x9f) = "‚»"
-p6chrdata(0xa0) = "@"
-p6chrdata(0xa1) = "B"
-p6chrdata(0xa2) = "u"
-p6chrdata(0xa3) = "v"
-p6chrdata(0xa4) = "A"
-p6chrdata(0xa5) = "E"
-p6chrdata(0xa6) = "ƒ’"
-p6chrdata(0xa7) = "ƒ@"
-p6chrdata(0xa8) = "ƒB"
-p6chrdata(0xa9) = "ƒD"
-p6chrdata(0xaa) = "ƒF"
-p6chrdata(0xab) = "ƒH"
-p6chrdata(0xac) = "ƒƒ"
-p6chrdata(0xad) = "ƒ…"
-p6chrdata(0xae) = "ƒ‡"
-p6chrdata(0xaf) = "ƒb"
-p6chrdata(0xb0) = "["
-p6chrdata(0xb1) = "ƒA"
-p6chrdata(0xb2) = "ƒC"
-p6chrdata(0xb3) = "ƒE"
-p6chrdata(0xb4) = "ƒG"
-p6chrdata(0xb5) = "ƒI"
-p6chrdata(0xb6) = "ƒJ"
-p6chrdata(0xb7) = "ƒL"
-p6chrdata(0xb8) = "ƒN"
-p6chrdata(0xb9) = "ƒP"
-p6chrdata(0xba) = "ƒR"
-p6chrdata(0xbb) = "ƒT"
-p6chrdata(0xbc) = "ƒV"
-p6chrdata(0xbd) = "ƒX"
-p6chrdata(0xbe) = "ƒZ"
-p6chrdata(0xbf) = "ƒ\"
-p6chrdata(0xc0) = "ƒ^"
-p6chrdata(0xc1) = "ƒ`"
-p6chrdata(0xc2) = "ƒc"
-p6chrdata(0xc3) = "ƒe"
-p6chrdata(0xc4) = "ƒg"
-p6chrdata(0xc5) = "ƒi"
-p6chrdata(0xc6) = "ƒj"
-p6chrdata(0xc7) = "ƒk"
-p6chrdata(0xc8) = "ƒl"
-p6chrdata(0xc9) = "ƒm"
-p6chrdata(0xca) = "ƒn"
-p6chrdata(0xcb) = "ƒq"
-p6chrdata(0xcc) = "ƒt"
-p6chrdata(0xcd) = "ƒw"
-p6chrdata(0xce) = "ƒz"
-p6chrdata(0xcf) = "ƒ}"
-p6chrdata(0xd0) = "ƒ~"
-p6chrdata(0xd1) = "ƒ€"
-p6chrdata(0xd2) = "ƒ"
-p6chrdata(0xd3) = "ƒ‚"
-p6chrdata(0xd4) = "ƒ„"
-p6chrdata(0xd5) = "ƒ†"
-p6chrdata(0xd6) = "ƒˆ"
-p6chrdata(0xd7) = "ƒ‰"
-p6chrdata(0xd8) = "ƒŠ"
-p6chrdata(0xd9) = "ƒ‹"
-p6chrdata(0xda) = "ƒŒ"
-p6chrdata(0xdb) = "ƒ"
-p6chrdata(0xdc) = "ƒ"
-p6chrdata(0xdd) = "ƒ“"
-p6chrdata(0xde) = "J"
-p6chrdata(0xdf) = "K"
-p6chrdata(0xe0) = "‚½"
-p6chrdata(0xe1) = "‚¿"
-p6chrdata(0xe2) = "‚Â"
-p6chrdata(0xe3) = "‚Ä"
-p6chrdata(0xe4) = "‚Æ"
-p6chrdata(0xe5) = "‚È"
-p6chrdata(0xe6) = "‚É"
-p6chrdata(0xe7) = "‚Ê"
-p6chrdata(0xe8) = "‚Ë"
-p6chrdata(0xe9) = "‚Ì"
-p6chrdata(0xea) = "‚Í"
-p6chrdata(0xeb) = "‚Ð"
-p6chrdata(0xec) = "‚Ó"
-p6chrdata(0xed) = "‚Ö"
-p6chrdata(0xee) = "‚Ù"
-p6chrdata(0xef) = "‚Ü"
-p6chrdata(0xf0) = "‚Ý"
-p6chrdata(0xf1) = "‚Þ"
-p6chrdata(0xf2) = "‚ß"
-p6chrdata(0xf3) = "‚à"
-p6chrdata(0xf4) = "‚â"
-p6chrdata(0xf5) = "‚ä"
-p6chrdata(0xf6) = "‚æ"
-p6chrdata(0xf7) = "‚ç"
-p6chrdata(0xf8) = "‚è"
-p6chrdata(0xf9) = "‚é"
-p6chrdata(0xfa) = "‚ê"
-p6chrdata(0xfb) = "‚ë"
-p6chrdata(0xfc) = "‚í"
-p6chrdata(0xfd) = "‚ñ"
-p6chrdata(0xfe) = "@"
-p6chrdata(0xff) = "@"
+sdim chrdata,2,0xFF
+chrdata(0x00) = " " 
+chrdata(0x01) = "ŒŽ" 
+chrdata(0x02) = "‰Î" 
+chrdata(0x03) = "…" 
+chrdata(0x04) = "–Ø"
+chrdata(0x05) = "‹à"
+chrdata(0x06) = "“y"
+chrdata(0x07) = "“ú"
+chrdata(0x08) = "”N"
+chrdata(0x09) = "‰~"
+chrdata(0x0a) = "Žž"
+chrdata(0x0b) = "•ª"
+chrdata(0x0c) = "•b"
+chrdata(0x0d) = "•S"
+chrdata(0x0e) = "ç"
+chrdata(0x0f) = "–œ"
+chrdata(0x10) = "ƒÎ "
+chrdata(0x11) = "„¨"
+chrdata(0x12) = "„¦"
+chrdata(0x13) = "„§"
+chrdata(0x14) = "„¥"
+chrdata(0x15) = "„©"
+chrdata(0x16) = "„ "
+chrdata(0x17) = "„Ÿ"
+chrdata(0x18) = "„¡"
+chrdata(0x19) = "„¢"
+chrdata(0x1a) = "„¤"
+chrdata(0x1b) = "„£"
+chrdata(0x1c) = "~"
+chrdata(0x1d) = "‘å"
+chrdata(0x1e) = "’†"
+chrdata(0x1f) = "¬"
+chrdata(0x20) = "@"
+chrdata(0x21) = "I"
+chrdata(0x22) = "h"
+chrdata(0x23) = "”"
+chrdata(0x24) = ""
+chrdata(0x25) = "“"
+chrdata(0x26) = "•"
+chrdata(0x27) = "f"
+chrdata(0x28) = "i"
+chrdata(0x29) = "j"
+chrdata(0x2a) = "–"
+chrdata(0x2b) = "{"
+chrdata(0x2c) = "C"
+chrdata(0x2d) = "|"
+chrdata(0x2e) = "D"
+chrdata(0x2f) = "^"
+chrdata(0x30) = "‚O"
+chrdata(0x31) = "‚P"
+chrdata(0x32) = "‚Q"
+chrdata(0x33) = "‚R"
+chrdata(0x34) = "‚S"
+chrdata(0x35) = "‚T"
+chrdata(0x36) = "‚U"
+chrdata(0x37) = "‚V"
+chrdata(0x38) = "‚W"
+chrdata(0x39) = "‚X"
+chrdata(0x3a) = "F"
+chrdata(0x3b) = "G"
+chrdata(0x3c) = "ƒ"
+chrdata(0x3d) = ""
+chrdata(0x3e) = "„"
+chrdata(0x3f) = "?"
+chrdata(0x40) = "@"
+chrdata(0x41) = "A"
+chrdata(0x42) = "B"
+chrdata(0x43) = "C"
+chrdata(0x44) = "D"
+chrdata(0x45) = "E"
+chrdata(0x46) = "F"
+chrdata(0x47) = "G"
+chrdata(0x48) = "H"
+chrdata(0x49) = "I"
+chrdata(0x4a) = "J"
+chrdata(0x4b) = "K"
+chrdata(0x4c) = "L"
+chrdata(0x4d) = "M"
+chrdata(0x4e) = "N"
+chrdata(0x4f) = "O"
+chrdata(0x50) = "P"
+chrdata(0x51) = "Q"
+chrdata(0x52) = "R"
+chrdata(0x53) = "S"
+chrdata(0x54) = "T"
+chrdata(0x55) = "U"
+chrdata(0x56) = "V"
+chrdata(0x57) = "W"
+chrdata(0x58) = "X"
+chrdata(0x59) = "Y"
+chrdata(0x5a) = "Z"
+chrdata(0x5b) = "["
+chrdata(0x5c) = "\"
+chrdata(0x5d) = "]"
+chrdata(0x5e) = "^"
+chrdata(0x5f) = "_"
+chrdata(0x60) = " "
+chrdata(0x61) = "a"
+chrdata(0x62) = "b"
+chrdata(0x63) = "c"
+chrdata(0x64) = "d"
+chrdata(0x65) = "e"
+chrdata(0x66) = "f"
+chrdata(0x67) = "g"
+chrdata(0x68) = "h"
+chrdata(0x69) = "i"
+chrdata(0x6a) = "j"
+chrdata(0x6b) = "k"
+chrdata(0x6c) = "l"
+chrdata(0x6d) = "m"
+chrdata(0x6e) = "n"
+chrdata(0x6f) = "o"
+chrdata(0x70) = "p"
+chrdata(0x71) = "q"
+chrdata(0x72) = "r"
+chrdata(0x73) = "s"
+chrdata(0x74) = "t"
+chrdata(0x75) = "u"
+chrdata(0x76) = "v"
+chrdata(0x77) = "w"
+chrdata(0x78) = "x"
+chrdata(0x79) = "y"
+chrdata(0x7a) = "z"
+chrdata(0x7b) = "{"
+chrdata(0x7c) = "|"
+chrdata(0x7d) = "}"
+chrdata(0x7e) = "~"
+chrdata(0x7f) = "@"
+chrdata(0x80) = "(ƒXƒy[ƒh)" 
+chrdata(0x81) = "(ƒn[ƒg)" 
+chrdata(0x82) = "(ƒNƒ‰ƒu)" 
+chrdata(0x83) = "(ƒ_ƒCƒ„)"
+chrdata(0x84) = "Z"
+chrdata(0x85) = "œ"
+chrdata(0x86) = "‚ð"
+chrdata(0x87) = "‚Ÿ"
+chrdata(0x88) = "‚¡"
+chrdata(0x89) = "‚£"
+chrdata(0x8a) = "‚¥"
+chrdata(0x8b) = "‚§"
+chrdata(0x8c) = "‚á"
+chrdata(0x8d) = "‚ã"
+chrdata(0x8e) = "‚å"
+chrdata(0x8f) = "‚Á"
+chrdata(0x90) = "@"
+chrdata(0x91) = "‚ "
+chrdata(0x92) = "‚¢"
+chrdata(0x93) = "‚¤"
+chrdata(0x94) = "‚¦"
+chrdata(0x95) = "‚¨"
+chrdata(0x96) = "‚©"
+chrdata(0x97) = "‚«"
+chrdata(0x98) = "‚­"
+chrdata(0x99) = "‚¯"
+chrdata(0x9a) = "‚±"
+chrdata(0x9b) = "‚³"
+chrdata(0x9c) = "‚µ"
+chrdata(0x9d) = "‚·"
+chrdata(0x9e) = "‚¹"
+chrdata(0x9f) = "‚»"
+chrdata(0xa0) = "@"
+chrdata(0xa1) = "B"
+chrdata(0xa2) = "u"
+chrdata(0xa3) = "v"
+chrdata(0xa4) = "A"
+chrdata(0xa5) = "E"
+chrdata(0xa6) = "ƒ’"
+chrdata(0xa7) = "ƒ@"
+chrdata(0xa8) = "ƒB"
+chrdata(0xa9) = "ƒD"
+chrdata(0xaa) = "ƒF"
+chrdata(0xab) = "ƒH"
+chrdata(0xac) = "ƒƒ"
+chrdata(0xad) = "ƒ…"
+chrdata(0xae) = "ƒ‡"
+chrdata(0xaf) = "ƒb"
+chrdata(0xb0) = "["
+chrdata(0xb1) = "ƒA"
+chrdata(0xb2) = "ƒC"
+chrdata(0xb3) = "ƒE"
+chrdata(0xb4) = "ƒG"
+chrdata(0xb5) = "ƒI"
+chrdata(0xb6) = "ƒJ"
+chrdata(0xb7) = "ƒL"
+chrdata(0xb8) = "ƒN"
+chrdata(0xb9) = "ƒP"
+chrdata(0xba) = "ƒR"
+chrdata(0xbb) = "ƒT"
+chrdata(0xbc) = "ƒV"
+chrdata(0xbd) = "ƒX"
+chrdata(0xbe) = "ƒZ"
+chrdata(0xbf) = "ƒ\"
+chrdata(0xc0) = "ƒ^"
+chrdata(0xc1) = "ƒ`"
+chrdata(0xc2) = "ƒc"
+chrdata(0xc3) = "ƒe"
+chrdata(0xc4) = "ƒg"
+chrdata(0xc5) = "ƒi"
+chrdata(0xc6) = "ƒj"
+chrdata(0xc7) = "ƒk"
+chrdata(0xc8) = "ƒl"
+chrdata(0xc9) = "ƒm"
+chrdata(0xca) = "ƒn"
+chrdata(0xcb) = "ƒq"
+chrdata(0xcc) = "ƒt"
+chrdata(0xcd) = "ƒw"
+chrdata(0xce) = "ƒz"
+chrdata(0xcf) = "ƒ}"
+chrdata(0xd0) = "ƒ~"
+chrdata(0xd1) = "ƒ€"
+chrdata(0xd2) = "ƒ"
+chrdata(0xd3) = "ƒ‚"
+chrdata(0xd4) = "ƒ„"
+chrdata(0xd5) = "ƒ†"
+chrdata(0xd6) = "ƒˆ"
+chrdata(0xd7) = "ƒ‰"
+chrdata(0xd8) = "ƒŠ"
+chrdata(0xd9) = "ƒ‹"
+chrdata(0xda) = "ƒŒ"
+chrdata(0xdb) = "ƒ"
+chrdata(0xdc) = "ƒ"
+chrdata(0xdd) = "ƒ“"
+chrdata(0xde) = "J"
+chrdata(0xdf) = "K"
+chrdata(0xe0) = "‚½"
+chrdata(0xe1) = "‚¿"
+chrdata(0xe2) = "‚Â"
+chrdata(0xe3) = "‚Ä"
+chrdata(0xe4) = "‚Æ"
+chrdata(0xe5) = "‚È"
+chrdata(0xe6) = "‚É"
+chrdata(0xe7) = "‚Ê"
+chrdata(0xe8) = "‚Ë"
+chrdata(0xe9) = "‚Ì"
+chrdata(0xea) = "‚Í"
+chrdata(0xeb) = "‚Ð"
+chrdata(0xec) = "‚Ó"
+chrdata(0xed) = "‚Ö"
+chrdata(0xee) = "‚Ù"
+chrdata(0xef) = "‚Ü"
+chrdata(0xf0) = "‚Ý"
+chrdata(0xf1) = "‚Þ"
+chrdata(0xf2) = "‚ß"
+chrdata(0xf3) = "‚à"
+chrdata(0xf4) = "‚â"
+chrdata(0xf5) = "‚ä"
+chrdata(0xf6) = "‚æ"
+chrdata(0xf7) = "‚ç"
+chrdata(0xf8) = "‚è"
+chrdata(0xf9) = "‚é"
+chrdata(0xfa) = "‚ê"
+chrdata(0xfb) = "‚ë"
+chrdata(0xfc) = "‚í"
+chrdata(0xfd) = "‚ñ"
+chrdata(0xfe) = "@"
+chrdata(0xff) = "@"
 return
 
