@@ -13,7 +13,7 @@ ROM image viewer for HSP3.
 
 nes : famicom
 
-smc : super famicom
+smc/sfc : super famicom
 
 gb : gameboy
 
