@@ -1,13 +1,7 @@
-# romview
+# ROMビューア
 
 ## overview
-ROM image viewer for HSP3.
-
-## 特徴
-
-・ヘッダー情報の確認。
-
-・サムチェック。
+ROMイメージのヘッダ情報を見たり、サムチェックをするツールです。HSP3で作りました。
 
 ## 対応する拡張子
 
@@ -29,7 +23,7 @@ pce : PC Engine
 
 ## screenshot
 
-nes file.
+nesファイルを見た例。マッパーとかミラーリングを確認できます。
 
 ![romview_fc](https://user-images.githubusercontent.com/5597377/128765252-0dc14096-fb04-49d6-afe7-d002d174d148.png)
 
